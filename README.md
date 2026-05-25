@@ -22,7 +22,7 @@ The MVP does not write back to the Obsidian vault. Mount the vault read-only by 
 cd /home/lgoodchild-a/app-learning-review
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements-dev.txt
+pip install -r requirements/dev.txt
 cp .env.example .env
 uvicorn app.main:app --reload --host 0.0.0.0 --port 8080
 ```
