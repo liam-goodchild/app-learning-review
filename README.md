@@ -83,6 +83,46 @@ learning_question_types:
 
 Add a `## Practice questions` section to seed draft short-answer questions. Repeated scans are idempotent and notes moved between configured folders are matched by hash/source metadata where possible.
 
+
+## AI Question Generation with Codex
+
+The app can queue AI generation jobs without storing an API key. A host-side worker uses your authenticated Codex CLI subscription, calls the app worker API, and imports generated JSON as draft questions. Generated questions are never auto-approved.
+
+Enable the worker API in `.env`:
+
+```env
+WORKER_TOKEN=replace-with-a-long-random-value
+APP_BASE_URL=http://127.0.0.1:8080
+```
+
+Set `APP_BASE_URL` to match the host port in `APP_PORT`. On this VM the local `.env` currently uses port `8081` because `8080` was already allocated.
+
+Rebuild/restart after changing `.env`:
+
+```bash
+docker compose up -d --build
+```
+
+From a source detail page, click **Generate with Codex** to queue a job. Then run the host worker from the repository directory:
+
+```bash
+scripts/process_generation_jobs.py --limit 5
+```
+
+For ad hoc generation from the app, leave the worker running in watch mode:
+
+```bash
+scripts/process_generation_jobs.py --watch --poll-seconds 10 --limit 1
+```
+
+For nightly processing, run the same script from cron or a systemd timer as the Linux user that is already logged in to Codex. The worker uses `codex exec --ephemeral --sandbox read-only -c approval_policy="never"` and validates the final JSON before creating draft questions.
+
+A manual test path is available without calling Codex:
+
+```bash
+scripts/process_generation_jobs.py --fake-output tests/fixtures/generated_questions.json --limit 1
+```
+
 ## Review Workflow
 
 1. Click **Scan vault**.

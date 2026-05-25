@@ -41,6 +41,7 @@ class Settings:
     min_file_age_seconds: int
     review_session_size: int
     enable_periodic_scan: bool
+    worker_token: str | None = None
 
 
 def get_settings() -> Settings:
@@ -61,5 +62,5 @@ def get_settings() -> Settings:
         min_file_age_seconds=int(os.getenv("MIN_FILE_AGE_SECONDS", "20")),
         review_session_size=int(os.getenv("REVIEW_SESSION_SIZE", "12")),
         enable_periodic_scan=os.getenv("ENABLE_PERIODIC_SCAN", "true").lower() in {"1", "true", "yes", "on"},
+        worker_token=os.getenv("WORKER_TOKEN") or None,
     )
-
