@@ -19,7 +19,7 @@ The MVP does not write back to the Obsidian vault. Mount the vault read-only by 
 ## Local Development
 
 ```bash
-cd /home/lgoodchild-a/app-learning
+cd /home/lgoodchild-a/app-learning-review
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements-dev.txt
@@ -34,7 +34,7 @@ For local development without Docker, set `DATABASE_URL=sqlite:///./data/learnin
 ## Docker Compose
 
 ```bash
-cd /home/lgoodchild-a/app-learning
+cd /home/lgoodchild-a/app-learning-review
 cp .env.example .env
 ```
 
