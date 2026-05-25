@@ -1,0 +1,59 @@
+{
+  "questions": [
+    {
+      "type": "multiple-choice",
+      "prompt": "A module caller must choose an instance size. Which Terraform construct belongs at the module boundary?",
+      "answer": "B",
+      "options": [
+        {"id": "A", "text": "A local value", "correct": false, "feedback": "Locals are internal expressions and cannot be supplied by callers."},
+        {"id": "B", "text": "An input variable", "correct": true, "feedback": "Input variables define values callers can provide."},
+        {"id": "C", "text": "An output value", "correct": false, "feedback": "Outputs expose values from a module; they do not accept input."}
+      ],
+      "rubric": [],
+      "feedback": {"why": "Variables are the input side of the module interface.", "common_misconception": "Confusing locals with variables because both name values."},
+      "difficulty": 2,
+      "source_reference": "00 - Inbox/Terraform Variables and Outputs.md"
+    },
+    {
+      "type": "short-answer",
+      "prompt": "Explain Terraform variables, locals, and outputs using a function analogy.",
+      "answer": "Variables are parameters, locals are helper variables inside the function, and outputs are return values.",
+      "options": [],
+      "rubric": [],
+      "feedback": {"why": "The analogy maps module interface boundaries to function inputs and returns.", "common_misconception": "Treating locals as caller-visible inputs."},
+      "difficulty": 2,
+      "source_reference": "00 - Inbox/Terraform Variables and Outputs.md"
+    },
+    {
+      "type": "rubric",
+      "prompt": "Describe when to use variables, locals, and outputs in a Terraform module.",
+      "answer": "Use variables for caller-provided inputs, locals for internal named expressions, and outputs for values exposed to callers.",
+      "options": [],
+      "rubric": [
+        {"criterion": "Identifies variables as caller-provided inputs", "points": 1},
+        {"criterion": "Identifies locals as internal expressions", "points": 1},
+        {"criterion": "Identifies outputs as exposed return values", "points": 1}
+      ],
+      "feedback": {"why": "The distinction is about module interface direction and scope.", "common_misconception": "Using outputs as inputs or locals as external configuration."},
+      "difficulty": 3,
+      "source_reference": "00 - Inbox/Terraform Variables and Outputs.md"
+    },
+    {
+      "type": "categorisation",
+      "prompt": "Classify each Terraform construct by its module-interface role.",
+      "answer": "Variables are inputs; locals are internal helpers; outputs are exposed returns.",
+      "options": {
+        "categories": ["variable", "local", "output"],
+        "items": [
+          {"text": "Caller supplies this value", "category": "variable"},
+          {"text": "Names a repeated expression inside the module", "category": "local"},
+          {"text": "Exposes a value to parent modules", "category": "output"}
+        ]
+      },
+      "rubric": [],
+      "feedback": {"why": "Each construct has a distinct scope and direction across the module boundary.", "common_misconception": "Thinking all named values are interchangeable."},
+      "difficulty": 2,
+      "source_reference": "00 - Inbox/Terraform Variables and Outputs.md"
+    }
+  ]
+}

@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "required": ["questions"],
+  "additionalProperties": false,
+  "properties": {
+    "questions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type", "prompt", "answer", "options", "rubric", "feedback", "difficulty", "source_reference"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {"enum": ["multiple-choice", "short-answer", "rubric", "categorisation"]},
+          "prompt": {"type": "string", "minLength": 1},
+          "answer": {"type": "string", "minLength": 1},
+          "options": {
+            "type": "object",
+            "required": ["options", "categories", "items"],
+            "additionalProperties": false,
+            "properties": {
+              "options": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["id", "text", "correct", "feedback"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "id": {"type": "string"},
+                    "text": {"type": "string"},
+                    "correct": {"type": "boolean"},
+                    "feedback": {"type": "string"}
+                  }
+                }
+              },
+              "categories": {
+                "type": "array",
+                "items": {"type": "string"}
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": ["text", "category"],
+                  "additionalProperties": false,
+                  "properties": {
+                    "text": {"type": "string"},
+                    "category": {"type": "string"}
+                  }
+                }
+              }
+            }
+          },
+          "rubric": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["criterion", "points"],
+              "additionalProperties": false,
+              "properties": {
+                "criterion": {"type": "string"},
+                "points": {"type": "integer"}
+              }
+            }
+          },
+          "feedback": {
+            "type": "object",
+            "required": ["why", "common_misconception"],
+            "additionalProperties": false,
+            "properties": {
+              "why": {"type": "string", "minLength": 1},
+              "common_misconception": {"type": "string"}
+            }
+          },
+          "difficulty": {"type": "integer", "minimum": 1, "maximum": 5},
+          "source_reference": {"type": "string"}
+        }
+      }
+    }
+  }
+}

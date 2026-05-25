@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager, suppress
 from pathlib import Path
 from typing import Any
 
-from fastapi import Depends, FastAPI, Form, HTTPException, Query, Request, status
+from fastapi import Body, Depends, FastAPI, Form, Header, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -18,7 +18,8 @@ from app.auth import SessionUser
 from app.config import get_settings
 from app.database import SessionLocal, get_session, init_db
 from app.importer.scanner import scan_vault
-from app.models import AppSetting, Attempt, Question, SourceNote
+from app.models import AppSetting, GenerationJob, Question, SourceNote
+from app.services import generation as generation_service
 from app.services import questions as question_service
 from app.services import reviews as review_service
 from app.services.json_tools import loads_json
@@ -75,6 +76,14 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 
 def require_user(request: Request) -> SessionUser:
     return auth.require_user(request, settings)
+
+
+def require_worker(authorization: str | None = Header(default=None)) -> None:
+    if not settings.worker_token:
+        raise HTTPException(status_code=404, detail="Worker API is not enabled")
+    expected = f"Bearer {settings.worker_token}"
+    if authorization != expected:
+        raise HTTPException(status_code=403, detail="Invalid worker token")
 
 
 def context(request: Request, user: SessionUser | None = None, **extra: Any) -> dict[str, Any]:
@@ -145,6 +154,7 @@ def dashboard(
         db.scalar(select(func.count(SourceNote.id)).where(SourceNote.learning_status == "needs-questions")) or 0
     )
     active_questions = int(db.scalar(select(func.count(Question.id)).where(Question.status == "active")) or 0)
+    pending_generation_jobs = int(db.scalar(select(func.count(GenerationJob.id)).where(GenerationJob.status == "pending")) or 0)
     attempts = review_service.recent_attempts(db, limit=8)
     return templates.TemplateResponse(
         "dashboard.html",
@@ -155,6 +165,7 @@ def dashboard(
             draft_count=draft_count,
             needs_questions=needs_questions,
             active_questions=active_questions,
+            pending_generation_jobs=pending_generation_jobs,
             recent_attempts=attempts,
         ),
     )
@@ -212,10 +223,111 @@ def source_detail(
         .scalars()
         .all()
     )
+    generation_jobs = generation_service.jobs_for_source(db, source.id)
     return templates.TemplateResponse(
         "source_detail.html",
-        context(request, user, source=source, questions=source_questions),
+        context(request, user, source=source, questions=source_questions, generation_jobs=generation_jobs),
     )
+
+
+@app.post("/sources/{source_id}/generation-jobs")
+def enqueue_generation_job(
+    source_id: int,
+    request: Request,
+    csrf_token: str = Form(...),
+    question_count: int = Form(8),
+    user: SessionUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> RedirectResponse:
+    auth.validate_csrf(request, settings, csrf_token)
+    source = db.get(SourceNote, source_id)
+    if source is None:
+        raise HTTPException(status_code=404)
+    generation_service.enqueue_generation_job(db, source, question_count=question_count)
+    return redirect(f"/sources/{source_id}")
+
+
+@app.get("/generation-jobs", response_class=HTMLResponse)
+def generation_jobs(
+    request: Request,
+    user: SessionUser = Depends(require_user),
+    db: Session = Depends(get_session),
+) -> HTMLResponse:
+    jobs = generation_service.recent_jobs(db, limit=100)
+    return templates.TemplateResponse("generation_jobs.html", context(request, user, jobs=jobs))
+
+
+@app.post("/worker/generation-jobs/claim")
+def worker_claim_generation_job(
+    _: None = Depends(require_worker),
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    job = generation_service.claim_next_job(db, settings)
+    if job is None:
+        return {"job": None}
+    return {
+        "job": {
+            "id": job.id,
+            "source_id": job.source_note_id,
+            "source_title": job.source_note.title,
+            "provider": job.provider,
+            "question_count": job.question_count,
+            "prompt": job.prompt_text,
+        }
+    }
+
+
+def _job_with_source(db: Session, job_id: int) -> GenerationJob:
+    job = (
+        db.execute(
+            select(GenerationJob)
+            .options(joinedload(GenerationJob.source_note))
+            .where(GenerationJob.id == job_id)
+        )
+        .unique()
+        .scalar_one_or_none()
+    )
+    if job is None:
+        raise HTTPException(status_code=404)
+    return job
+
+
+@app.post("/worker/generation-jobs/{job_id:int}/complete")
+def worker_complete_generation_job(
+    job_id: int,
+    payload: dict[str, Any] = Body(...),
+    _: None = Depends(require_worker),
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    job = _job_with_source(db, job_id)
+    raw_output = str(payload.get("raw_output", ""))
+    try:
+        completed = generation_service.complete_generation_job(db, job, raw_output)
+    except ValueError as exc:
+        failed = generation_service.fail_generation_job(db, job, str(exc), raw_output=raw_output)
+        return {"id": failed.id, "status": failed.status, "error": failed.error, "draft_questions_created": 0}
+    return {
+        "id": completed.id,
+        "status": completed.status,
+        "draft_questions_created": completed.draft_questions_created,
+    }
+
+
+@app.post("/worker/generation-jobs/{job_id:int}/fail")
+def worker_fail_generation_job(
+    job_id: int,
+    payload: dict[str, Any] = Body(...),
+    _: None = Depends(require_worker),
+    db: Session = Depends(get_session),
+) -> dict[str, Any]:
+    job = _job_with_source(db, job_id)
+    failed = generation_service.fail_generation_job(
+        db,
+        job,
+        str(payload.get("error", "Unknown worker failure")),
+        raw_output=str(payload.get("raw_output", "")),
+    )
+    return {"id": failed.id, "status": failed.status, "error": failed.error}
 
 
 @app.post("/sources/{source_id}/questions")

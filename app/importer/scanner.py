@@ -139,6 +139,7 @@ def import_markdown_file(db: Session, path: Path, settings: Settings, now: datet
     source.status = parsed.status
     source.confidence = parsed.confidence
     source.learning_status = _status_for_source(parsed, source)
+    source.body = parsed.body
     source.last_imported_at = now
     source.last_seen_at = now
     source.updated_at = now

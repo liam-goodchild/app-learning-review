@@ -54,6 +54,36 @@
 
 <section class="panel">
   <div class="section-title">
+    <h2>AI Generation</h2>
+    <a href="/generation-jobs">All jobs</a>
+  </div>
+  <form class="toolbar" method="post" action="/sources/{{ source.id }}/generation-jobs">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>
+      Question count
+      <input type="number" name="question_count" min="1" max="20" value="8">
+    </label>
+    <button class="button primary" type="submit">Generate with Codex</button>
+  </form>
+  {% if generation_jobs %}
+  <ul class="plain-list">
+    {% for job in generation_jobs[:5] %}
+    <li>
+      <span class="pill">{{ job.status }}</span>
+      <span>{{ job.provider }}</span>
+      <span>{{ job.created_at|datetime }}</span>
+      {% if job.draft_questions_created %}<span>{{ job.draft_questions_created }} drafts</span>{% endif %}
+      {% if job.error %}<span class="path">{{ job.error[:240] }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="empty">No generation jobs yet.</p>
+  {% endif %}
+</section>
+
+<section class="panel">
+  <div class="section-title">
     <h2>Questions</h2>
     <a href="/questions/drafts">Draft queue</a>
   </div>
@@ -92,4 +122,3 @@
   {% endif %}
 </section>
 {% endblock %}
-

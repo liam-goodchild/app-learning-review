@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Iterator
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.config import get_settings
@@ -28,8 +28,19 @@ engine = create_engine(settings.database_url, connect_args=connect_args, future=
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 
+def run_lightweight_migrations() -> None:
+    inspector = inspect(engine)
+    if "source_notes" not in inspector.get_table_names():
+        return
+    column_names = {column["name"] for column in inspector.get_columns("source_notes")}
+    if "body" not in column_names:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE source_notes ADD COLUMN body TEXT NOT NULL DEFAULT ''"))
+
+
 def init_db() -> None:
     Base.metadata.create_all(bind=engine)
+    run_lightweight_migrations()
 
 
 def get_session() -> Iterator[Session]:

@@ -35,9 +35,30 @@ class SourceNote(TimestampMixin, Base):
     learning_status: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     last_imported_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    body: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     concepts: Mapped[list["Concept"]] = relationship(back_populates="source_note", cascade="all, delete-orphan")
     questions: Mapped[list["Question"]] = relationship(back_populates="source_note", cascade="all, delete-orphan")
+    generation_jobs: Mapped[list["GenerationJob"]] = relationship(back_populates="source_note", cascade="all, delete-orphan")
+
+
+class GenerationJob(TimestampMixin, Base):
+    __tablename__ = "generation_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_note_id: Mapped[int] = mapped_column(ForeignKey("source_notes.id"), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(64), default="codex", nullable=False)
+    status: Mapped[str] = mapped_column(String(64), default="pending", nullable=False, index=True)
+    question_count: Mapped[int] = mapped_column(Integer, default=8, nullable=False)
+    question_types_json: Mapped[str] = mapped_column(Text, default="[]", nullable=False)
+    prompt_text: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    raw_output: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    error: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    draft_questions_created: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    source_note: Mapped[SourceNote] = relationship(back_populates="generation_jobs")
 
 
 class Concept(TimestampMixin, Base):
