@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% block title %}{{ source.title }} - Learning Review{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>{{ source.title }}</h1>
+    <p class="path">{{ source.path }}</p>
+  </div>
+  <a class="button" href="/sources">Back</a>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="section-title"><h2>Metadata</h2></div>
+    <dl class="detail-list">
+      <dt>Learning status</dt><dd><span class="pill">{{ source.learning_status }}</span></dd>
+      <dt>Source status</dt><dd>{{ source.status or "" }}</dd>
+      <dt>Confidence</dt><dd>{{ source.confidence or "" }}</dd>
+      <dt>Imported</dt><dd>{{ source.last_imported_at|datetime }}</dd>
+      <dt>Hash</dt><dd class="path">{{ source.content_hash }}</dd>
+      <dt>Sources</dt><dd class="path">{{ source.source_urls_json }}</dd>
+    </dl>
+    <details>
+      <summary>Frontmatter</summary>
+      <pre>{{ source.frontmatter_json|json_pretty }}</pre>
+    </details>
+  </div>
+
+  <div class="panel">
+    <div class="section-title"><h2>Add Draft Question</h2></div>
+    <form class="stack" method="post" action="/sources/{{ source.id }}/questions">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        Type
+        <select name="question_type">
+          <option value="short-answer">short-answer</option>
+          <option value="multiple-choice">multiple-choice</option>
+          <option value="rubric">rubric</option>
+          <option value="categorisation">categorisation</option>
+        </select>
+      </label>
+      <label>
+        Prompt
+        <textarea name="prompt" rows="4" required></textarea>
+      </label>
+      <label>
+        Model answer
+        <textarea name="answer" rows="3"></textarea>
+      </label>
+      <button class="button primary" type="submit">Create draft</button>
+    </form>
+  </div>
+</section>
+
+<section class="panel">
+  <div class="section-title">
+    <h2>Questions</h2>
+    <a href="/questions/drafts">Draft queue</a>
+  </div>
+  {% if questions %}
+  <div class="question-list">
+    {% for question in questions %}
+    <article class="question-row">
+      <div>
+        <div class="row-meta">
+          <span class="pill">{{ question.status }}</span>
+          <span>{{ question.type }}</span>
+          {% if question.schedule %}<span>due {{ question.schedule.due_at|datetime }}</span>{% endif %}
+        </div>
+        <h3>{{ question.prompt }}</h3>
+      </div>
+      <div class="row-actions">
+        <a class="button" href="/questions/{{ question.id }}/edit">Edit</a>
+        {% if question.status != "active" %}
+        <form method="post" action="/questions/{{ question.id }}/approve">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button primary" type="submit">Approve</button>
+        </form>
+        {% endif %}
+        {% if question.status != "retired" %}
+        <form method="post" action="/questions/{{ question.id }}/retire">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button danger" type="submit">Retire</button>
+        </form>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty">No questions yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
+

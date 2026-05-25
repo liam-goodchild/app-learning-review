@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block title %}Learning Review{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', path='app.css') }}">
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/">Learning Review</a>
+      {% if user %}
+      <nav class="nav">
+        <a href="/">Dashboard</a>
+        <a href="/sources">Sources</a>
+        <a href="/questions/drafts">Drafts</a>
+        <a href="/review">Daily Review</a>
+        <a href="/settings">Settings</a>
+      </nav>
+      <form class="logout-form" method="post" action="/logout">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <button class="button subtle" type="submit">Sign out</button>
+      </form>
+      {% endif %}
+    </header>
+
+    <main class="shell">
+      {% block content %}{% endblock %}
+    </main>
+  </body>
+</html>
+

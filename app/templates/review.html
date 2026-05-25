@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}Review - Learning Review{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>Daily Review</h1>
+    <p><a href="/sources/{{ question.source_note.id }}">{{ question.source_note.title }}</a></p>
+  </div>
+</section>
+
+<section class="review-surface">
+  <div class="review-meta">
+    <span class="pill">{{ question.type }}</span>
+    <span>{{ question.source_reference or question.source_note.path }}</span>
+  </div>
+  <h2>{{ question.prompt }}</h2>
+
+  <form class="stack" method="post" action="/review/{{ question.id }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {% if question.type == "multiple-choice" %}
+      <fieldset class="choice-list">
+        {% for option in options %}
+        <label class="choice">
+          <input type="radio" name="answer" value="{{ option.id }}" required>
+          <span>{{ option.id }}. {{ option.text }}</span>
+        </label>
+        {% endfor %}
+      </fieldset>
+    {% elif question.type == "categorisation" %}
+      <div class="categorisation-grid">
+        {% for item in categorisation.get("items", []) %}
+        <label>
+          {{ item.text }}
+          <select name="category_{{ loop.index0 }}" required>
+            <option value="">Select</option>
+            {% for category in categorisation.get("categories", []) %}
+            <option value="{{ category }}">{{ category }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        {% endfor %}
+      </div>
+    {% else %}
+      <label>
+        Answer
+        <textarea name="answer" rows="9" required></textarea>
+      </label>
+    {% endif %}
+    <button class="button primary" type="submit">Submit answer</button>
+  </form>
+</section>
+{% endblock %}
+

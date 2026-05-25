@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}Edit Question - Learning Review{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>Edit Question</h1>
+    <p><a href="/sources/{{ question.source_note_id }}">Source {{ question.source_note_id }}</a></p>
+  </div>
+</section>
+
+{% if error %}<p class="alert">{{ error }}</p>{% endif %}
+
+<form class="panel stack editor" method="post" action="/questions/{{ question.id }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+  <div class="form-grid">
+    <label>
+      Type
+      <select name="question_type">
+        {% for kind in ["short-answer", "multiple-choice", "rubric", "categorisation"] %}
+        <option value="{{ kind }}" {% if question.type == kind %}selected{% endif %}>{{ kind }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Status
+      <select name="question_status">
+        {% for status in ["draft", "approved", "active", "retired"] %}
+        <option value="{{ status }}" {% if question.status == status %}selected{% endif %}>{{ status }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>
+      Difficulty
+      <input type="number" name="difficulty" min="1" max="5" value="{{ question.difficulty }}">
+    </label>
+  </div>
+  <label>
+    Prompt
+    <textarea name="prompt" rows="5" required>{{ question.prompt }}</textarea>
+  </label>
+  <label>
+    Model answer
+    <textarea name="answer" rows="5">{{ question.answer }}</textarea>
+  </label>
+  <label>
+    Options JSON
+    <textarea name="options_json" rows="10" spellcheck="false">{{ question.options_json|json_pretty }}</textarea>
+  </label>
+  <label>
+    Rubric JSON
+    <textarea name="rubric_json" rows="8" spellcheck="false">{{ question.rubric_json|json_pretty }}</textarea>
+  </label>
+  <label>
+    Feedback JSON
+    <textarea name="feedback_json" rows="8" spellcheck="false">{{ question.feedback_json|json_pretty }}</textarea>
+  </label>
+  <label>
+    Source reference
+    <input type="text" name="source_reference" value="{{ question.source_reference or '' }}">
+  </label>
+  <div class="button-row">
+    <button class="button primary" type="submit">Save</button>
+    <a class="button" href="/sources/{{ question.source_note_id }}">Cancel</a>
+  </div>
+</form>
+{% endblock %}
+

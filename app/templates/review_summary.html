@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block title %}Review Summary - Learning Review{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>Review Summary</h1>
+    <p>{{ due_count }} due now</p>
+  </div>
+  <a class="button primary" href="/review">Continue</a>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="section-title"><h2>Recent Attempts</h2></div>
+    {% if attempts %}
+    <ul class="plain-list">
+      {% for attempt in attempts %}
+      <li>
+        <a href="/sources/{{ attempt.question.source_note.id }}">{{ attempt.question.source_note.title }}</a>
+        <span class="pill">{{ attempt.rating }}</span>
+        <span>{{ attempt.created_at|datetime }}</span>
+      </li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No attempts recorded.</p>
+    {% endif %}
+  </div>
+
+  <div class="panel">
+    <div class="section-title"><h2>Weak Areas</h2></div>
+    {% if weak_areas %}
+    <ul class="plain-list">
+      {% for source, misses in weak_areas %}
+      <li><a href="/sources/{{ source.id }}">{{ source.title }}</a> <span class="pill">{{ misses }}</span></li>
+      {% endfor %}
+    </ul>
+    {% else %}
+    <p class="empty">No weak areas yet.</p>
+    {% endif %}
+  </div>
+</section>
+{% endblock %}
+

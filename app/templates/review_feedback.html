@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Feedback - Learning Review{% endblock %}
+{% block content %}
+<section class="review-surface">
+  <div class="review-meta">
+    <span class="pill">{{ feedback.result }}</span>
+    {% if feedback.score is not none %}<span>{{ "%.0f"|format(feedback.score * 100) }}%</span>{% endif %}
+  </div>
+  <h1>{{ question.prompt }}</h1>
+
+  <div class="feedback-grid">
+    <section>
+      <h2>Your answer</h2>
+      <pre>{{ submitted_answer }}</pre>
+    </section>
+    <section>
+      <h2>Expected answer</h2>
+      <pre>{{ feedback.expected_answer }}</pre>
+    </section>
+  </div>
+
+  {% if feedback.why %}
+  <section class="feedback-block">
+    <h2>Feedback</h2>
+    <p>{{ feedback.why }}</p>
+  </section>
+  {% endif %}
+
+  {% if feedback.common_misconception %}
+  <section class="feedback-block">
+    <h2>Common Misconception</h2>
+    <p>{{ feedback.common_misconception }}</p>
+  </section>
+  {% endif %}
+
+  {% if feedback.option_feedback %}
+  <section class="feedback-block">
+    <h2>Options</h2>
+    <ul class="plain-list">
+      {% for option in feedback.option_feedback %}
+      <li><strong>{{ option.id }}.</strong> {{ option.feedback or option.text }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <form class="stack rating-form" method="post" action="/review/{{ question.id }}/rate">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="submitted_answer" value="{{ submitted_answer }}">
+    {% if feedback.score is not none %}
+    <input type="hidden" name="score" value="{{ feedback.score }}">
+    {% endif %}
+
+    {% if question.type == "rubric" and feedback.rubric %}
+    <fieldset class="rubric-checklist">
+      <legend>Rubric</legend>
+      {% for item in feedback.rubric %}
+      <label>
+        <input type="checkbox" name="rubric_points" value="{{ item.points or 1 }}">
+        <span>{{ item.criterion }} <small>{{ item.points or 1 }} pt</small></span>
+      </label>
+      {% endfor %}
+    </fieldset>
+    {% endif %}
+
+    <div class="form-grid">
+      <label>
+        Rating
+        <select name="rating" required>
+          <option value="again">again</option>
+          <option value="hard">hard</option>
+          <option value="good" selected>good</option>
+          <option value="easy">easy</option>
+        </select>
+      </label>
+      <label>
+        Confidence
+        <select name="confidence" required>
+          <option value="low">low</option>
+          <option value="medium" selected>medium</option>
+          <option value="high">high</option>
+        </select>
+      </label>
+    </div>
+    <button class="button primary" type="submit">Save rating</button>
+  </form>
+</section>
+{% endblock %}
+

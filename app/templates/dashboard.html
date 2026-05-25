@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Learning Review{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>Dashboard</h1>
+    <p>{{ settings.vault_path }}</p>
+  </div>
+  <form method="post" action="/sources/scan">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <button class="button primary" type="submit">Scan vault</button>
+  </form>
+</section>
+
+<section class="metric-grid">
+  <a class="metric" href="/review">
+    <span>Due</span>
+    <strong>{{ due_count }}</strong>
+  </a>
+  <a class="metric" href="/questions/drafts">
+    <span>Drafts</span>
+    <strong>{{ draft_count }}</strong>
+  </a>
+  <a class="metric" href="/sources?learning_status=needs-questions">
+    <span>Needs questions</span>
+    <strong>{{ needs_questions }}</strong>
+  </a>
+  <a class="metric" href="/sources?learning_status=active">
+    <span>Active questions</span>
+    <strong>{{ active_questions }}</strong>
+  </a>
+</section>
+
+<section class="panel">
+  <div class="section-title">
+    <h2>Recent Attempts</h2>
+    <a href="/review/summary">Summary</a>
+  </div>
+  {% if recent_attempts %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>When</th>
+          <th>Source</th>
+          <th>Question</th>
+          <th>Rating</th>
+          <th>Confidence</th>
+          <th>Score</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for attempt in recent_attempts %}
+        <tr>
+          <td>{{ attempt.created_at|datetime }}</td>
+          <td><a href="/sources/{{ attempt.question.source_note.id }}">{{ attempt.question.source_note.title }}</a></td>
+          <td>{{ attempt.question.prompt }}</td>
+          <td><span class="pill">{{ attempt.rating }}</span></td>
+          <td>{{ attempt.confidence }}</td>
+          <td>{% if attempt.score is not none %}{{ "%.0f"|format(attempt.score * 100) }}%{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <p class="empty">No attempts recorded.</p>
+  {% endif %}
+</section>
+{% endblock %}
+

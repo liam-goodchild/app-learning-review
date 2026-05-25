@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Settings - Learning Review{% endblock %}
+{% block content %}
+<section class="page-heading">
+  <div>
+    <h1>Settings</h1>
+    {% if saved %}<p>Saved</p>{% endif %}
+  </div>
+</section>
+
+<section class="two-column">
+  <div class="panel">
+    <div class="section-title"><h2>Runtime</h2></div>
+    <dl class="detail-list">
+      <dt>Database</dt><dd class="path">{{ settings.database_url }}</dd>
+      <dt>Vault path</dt><dd class="path">{{ settings.vault_path }}</dd>
+      <dt>Import folders</dt><dd>{{ settings.vault_import_folders|join(", ") }}</dd>
+      <dt>Scan interval</dt><dd>{{ settings.scan_interval_seconds }} seconds</dd>
+      <dt>Minimum file age</dt><dd>{{ settings.min_file_age_seconds }} seconds</dd>
+      <dt>Review size</dt><dd>{{ settings.review_session_size }}</dd>
+    </dl>
+  </div>
+
+  <div class="panel">
+    <div class="section-title"><h2>Password</h2></div>
+    <form class="stack" method="post" action="/settings">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>
+        New password
+        <input type="password" name="new_password" autocomplete="new-password">
+      </label>
+      <button class="button primary" type="submit">Update password</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+
