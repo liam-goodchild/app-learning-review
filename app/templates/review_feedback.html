@@ -47,6 +47,7 @@
   <form class="stack rating-form" method="post" action="/review/{{ question.id }}/rate">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="submitted_answer" value="{{ submitted_answer }}">
+    <input type="hidden" name="return_to" value="{{ return_to or '' }}">
     {% if feedback.score is not none %}
     <input type="hidden" name="score" value="{{ feedback.score }}">
     {% endif %}
@@ -63,26 +64,16 @@
     </fieldset>
     {% endif %}
 
-    <div class="form-grid">
-      <label>
-        Rating
-        <select name="rating" required>
-          <option value="again">again</option>
-          <option value="hard">hard</option>
-          <option value="good" selected>good</option>
-          <option value="easy">easy</option>
-        </select>
-      </label>
-      <label>
-        Confidence
-        <select name="confidence" required>
-          <option value="low">low</option>
-          <option value="medium" selected>medium</option>
-          <option value="high">high</option>
-        </select>
-      </label>
-    </div>
-    <button class="button primary" type="submit">Save rating</button>
+    <label>
+      How did it go?
+      <select name="rating" required>
+        <option value="again">Forgot — show again soon</option>
+        <option value="hard">Hard — got it with effort</option>
+        <option value="good" selected>Good — recalled correctly</option>
+        <option value="easy">Easy — knew instantly</option>
+      </select>
+    </label>
+    <button class="button primary" type="submit">Save</button>
   </form>
 </section>
 {% endblock %}

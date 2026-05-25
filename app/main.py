@@ -10,7 +10,7 @@ from fastapi import Body, Depends, FastAPI, Form, Header, HTTPException, Query, 
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
-from sqlalchemy import desc, func, select
+from sqlalchemy import desc, select
 from sqlalchemy.orm import Session, joinedload
 
 from app import auth
@@ -20,7 +20,6 @@ from app.database import SessionLocal, get_session, init_db
 from app.importer.scanner import scan_vault
 from app.models import AppSetting, GenerationJob, Question, SourceNote
 from app.services import generation as generation_service
-from app.services import questions as question_service
 from app.services import reviews as review_service
 from app.services.json_tools import loads_json
 
@@ -42,8 +41,40 @@ def _format_datetime(value: Any) -> str:
     return value.strftime("%Y-%m-%d %H:%M")
 
 
+def _format_question_type(value: Any) -> str:
+    if not value:
+        return ""
+    return str(value).replace("-", " ").capitalize()
+
+
+def _format_due(value: Any) -> str:
+    if value is None:
+        return ""
+    from datetime import datetime, timezone
+
+    now = datetime.now(timezone.utc)
+    due = value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    delta = due - now
+    days = delta.total_seconds() / 86400
+    if days < -1:
+        return f"Overdue by {int(-days)}d"
+    if days < 0:
+        return "Due now"
+    if days < 1:
+        if due.date() == now.date():
+            return "Due today"
+        return "Due tomorrow"
+    if days < 2:
+        return "Due tomorrow"
+    if days < 7:
+        return f"Due in {int(days)}d"
+    return f"Due {due.strftime('%b %d')}"
+
+
 templates.env.filters["json_pretty"] = _json_pretty
 templates.env.filters["datetime"] = _format_datetime
+templates.env.filters["question_type"] = _format_question_type
+templates.env.filters["due"] = _format_due
 
 
 async def periodic_scan_loop() -> None:
@@ -142,33 +173,9 @@ def logout(request: Request, csrf_token: str = Form(...)) -> RedirectResponse:
     return response
 
 
-@app.get("/", response_class=HTMLResponse)
-def dashboard(
-    request: Request,
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> HTMLResponse:
-    due = review_service.due_count(db)
-    draft_count = int(db.scalar(select(func.count(Question.id)).where(Question.status == "draft")) or 0)
-    needs_questions = int(
-        db.scalar(select(func.count(SourceNote.id)).where(SourceNote.learning_status == "needs-questions")) or 0
-    )
-    active_questions = int(db.scalar(select(func.count(Question.id)).where(Question.status == "active")) or 0)
-    pending_generation_jobs = int(db.scalar(select(func.count(GenerationJob.id)).where(GenerationJob.status == "pending")) or 0)
-    attempts = review_service.recent_attempts(db, limit=8)
-    return templates.TemplateResponse(
-        "dashboard.html",
-        context(
-            request,
-            user,
-            due_count=due,
-            draft_count=draft_count,
-            needs_questions=needs_questions,
-            active_questions=active_questions,
-            pending_generation_jobs=pending_generation_jobs,
-            recent_attempts=attempts,
-        ),
-    )
+@app.get("/")
+def root(_: SessionUser = Depends(require_user)) -> RedirectResponse:
+    return redirect("/sources")
 
 
 @app.post("/sources/scan")
@@ -180,25 +187,44 @@ def trigger_scan(
 ) -> RedirectResponse:
     auth.validate_csrf(request, settings, csrf_token)
     result = scan_vault(db, settings)
-    message = f"scan=Imported {result.imported}, created {result.draft_questions_created} drafts, errors {result.skipped_errors}"
+    message = (
+        f"scan=Imported {result.imported}, enqueued {result.generation_jobs_enqueued} generation jobs, "
+        f"errors {result.skipped_errors}"
+    )
     return redirect(f"/sources?{message}")
 
 
 @app.get("/sources", response_class=HTMLResponse)
 def sources(
     request: Request,
-    learning_status: str = Query("all"),
+    tag: str = Query(""),
     scan: str | None = Query(None),
     user: SessionUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> HTMLResponse:
-    query = select(SourceNote).order_by(desc(SourceNote.last_imported_at), SourceNote.title.asc())
-    if learning_status != "all":
-        query = query.where(SourceNote.learning_status == learning_status)
-    notes = db.scalars(query).all()
+    notes = db.scalars(
+        select(SourceNote).order_by(desc(SourceNote.last_imported_at), SourceNote.title.asc())
+    ).all()
+    tag_clean = tag.strip().lower()
+    all_tags: set[str] = set()
+    filtered = []
+    for note in notes:
+        tags = loads_json(note.tags_json, [])
+        tag_list = [str(t).lower() for t in tags] if isinstance(tags, list) else []
+        for t in tag_list:
+            all_tags.add(t)
+        if not tag_clean or tag_clean in tag_list:
+            filtered.append(note)
     return templates.TemplateResponse(
         "sources.html",
-        context(request, user, notes=notes, selected_status=learning_status, scan_message=scan),
+        context(
+            request,
+            user,
+            notes=filtered,
+            selected_tag=tag_clean,
+            all_tags=sorted(all_tags),
+            scan_message=scan,
+        ),
     )
 
 
@@ -212,30 +238,38 @@ def source_detail(
     source = db.get(SourceNote, source_id)
     if source is None:
         raise HTTPException(status_code=404)
-    source_questions = (
+    active_questions = (
         db.execute(
             select(Question)
             .options(joinedload(Question.schedule))
-            .where(Question.source_note_id == source.id)
-            .order_by(Question.status.asc(), Question.id.asc())
+            .where(Question.source_note_id == source.id, Question.status == "active")
+            .order_by(Question.id.asc())
         )
         .unique()
         .scalars()
         .all()
     )
-    generation_jobs = generation_service.jobs_for_source(db, source.id)
+    jobs = generation_service.jobs_for_source(db, source.id)
+    pending_job = next((j for j in jobs if j.status in ("pending", "running")), None)
+    last_failed_job = next((j for j in jobs if j.status == "failed"), None)
     return templates.TemplateResponse(
         "source_detail.html",
-        context(request, user, source=source, questions=source_questions, generation_jobs=generation_jobs),
+        context(
+            request,
+            user,
+            source=source,
+            active_questions=active_questions,
+            pending_job=pending_job,
+            last_failed_job=last_failed_job,
+        ),
     )
 
 
-@app.post("/sources/{source_id}/generation-jobs")
-def enqueue_generation_job(
+@app.post("/sources/{source_id}/delete")
+def delete_source(
     source_id: int,
     request: Request,
     csrf_token: str = Form(...),
-    question_count: int = Form(8),
     user: SessionUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> RedirectResponse:
@@ -243,18 +277,31 @@ def enqueue_generation_job(
     source = db.get(SourceNote, source_id)
     if source is None:
         raise HTTPException(status_code=404)
-    generation_service.enqueue_generation_job(db, source, question_count=question_count)
-    return redirect(f"/sources/{source_id}")
+    db.delete(source)
+    db.commit()
+    return redirect("/sources")
 
 
-@app.get("/generation-jobs", response_class=HTMLResponse)
-def generation_jobs(
+@app.post("/sources/{source_id}/regenerate")
+def regenerate_source(
+    source_id: int,
     request: Request,
+    csrf_token: str = Form(...),
     user: SessionUser = Depends(require_user),
     db: Session = Depends(get_session),
-) -> HTMLResponse:
-    jobs = generation_service.recent_jobs(db, limit=100)
-    return templates.TemplateResponse("generation_jobs.html", context(request, user, jobs=jobs))
+) -> RedirectResponse:
+    auth.validate_csrf(request, settings, csrf_token)
+    source = db.get(SourceNote, source_id)
+    if source is None:
+        raise HTTPException(status_code=404)
+    existing = db.scalars(select(Question).where(Question.source_note_id == source.id)).all()
+    for q in existing:
+        db.delete(q)
+    source.learning_status = "needs-questions"
+    db.flush()
+    generation_service.enqueue_generation_job(db, source)
+    db.commit()
+    return redirect(f"/sources/{source_id}")
 
 
 @app.post("/worker/generation-jobs/claim")
@@ -330,147 +377,11 @@ def worker_fail_generation_job(
     return {"id": failed.id, "status": failed.status, "error": failed.error}
 
 
-@app.post("/sources/{source_id}/questions")
-def add_question(
-    source_id: int,
-    request: Request,
-    csrf_token: str = Form(...),
-    question_type: str = Form("short-answer"),
-    prompt: str = Form(...),
-    answer: str = Form(""),
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> RedirectResponse:
-    auth.validate_csrf(request, settings, csrf_token)
-    question_service.create_question(db, source_id, question_type=question_type, prompt=prompt, answer=answer)
-    return redirect(f"/sources/{source_id}")
-
-
-@app.get("/questions/drafts", response_class=HTMLResponse)
-def draft_questions(
-    request: Request,
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> HTMLResponse:
-    drafts = (
-        db.execute(
-            select(Question)
-            .options(joinedload(Question.source_note))
-            .where(Question.status == "draft")
-            .order_by(Question.created_at.asc())
-        )
-        .unique()
-        .scalars()
-        .all()
-    )
-    return templates.TemplateResponse("drafts.html", context(request, user, drafts=drafts))
-
-
-@app.get("/questions/{question_id}/edit", response_class=HTMLResponse)
-def edit_question_form(
-    question_id: int,
-    request: Request,
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> HTMLResponse:
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404)
-    return templates.TemplateResponse("question_edit.html", context(request, user, question=question, error=None))
-
-
-@app.post("/questions/{question_id}", response_class=HTMLResponse)
-def update_question(
-    question_id: int,
-    request: Request,
-    csrf_token: str = Form(...),
-    question_type: str = Form(...),
-    prompt: str = Form(...),
-    answer: str = Form(""),
-    options_json: str = Form(""),
-    rubric_json: str = Form(""),
-    feedback_json: str = Form(""),
-    source_reference: str = Form(""),
-    difficulty: int = Form(2),
-    question_status: str = Form("draft"),
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> Any:
-    auth.validate_csrf(request, settings, csrf_token)
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404)
-    try:
-        question_service.update_question(
-            db,
-            question,
-            question_type=question_type,
-            prompt=prompt,
-            answer=answer,
-            options_json=options_json,
-            rubric_json=rubric_json,
-            feedback_json=feedback_json,
-            source_reference=source_reference,
-            difficulty=difficulty,
-            status=question_status,
-        )
-    except ValueError as exc:
-        return templates.TemplateResponse(
-            "question_edit.html",
-            context(request, user, question=question, error=str(exc)),
-            status_code=status.HTTP_400_BAD_REQUEST,
-        )
-    return redirect(f"/sources/{question.source_note_id}")
-
-
-@app.post("/questions/{question_id}/approve")
-def approve_question(
-    question_id: int,
-    request: Request,
-    csrf_token: str = Form(...),
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> RedirectResponse:
-    auth.validate_csrf(request, settings, csrf_token)
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404)
-    question_service.approve_question(db, question)
-    return redirect(f"/sources/{question.source_note_id}")
-
-
-@app.post("/questions/{question_id}/retire")
-def retire_question(
-    question_id: int,
-    request: Request,
-    csrf_token: str = Form(...),
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> RedirectResponse:
-    auth.validate_csrf(request, settings, csrf_token)
-    question = db.get(Question, question_id)
-    if question is None:
-        raise HTTPException(status_code=404)
-    question_service.retire_question(db, question)
-    return redirect(f"/sources/{question.source_note_id}")
-
-
-@app.get("/review", response_class=HTMLResponse)
-def start_review(
-    request: Request,
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> Any:
-    queue = review_service.due_questions(db, limit=settings.review_session_size)
-    if not queue:
-        return review_summary(request, user=user, db=db)
-    return redirect(f"/review/{queue[0].id}")
-
-
 @app.get("/review/{question_id:int}", response_class=HTMLResponse)
 def review_question(
     question_id: int,
     request: Request,
+    return_to: str = Query(""),
     user: SessionUser = Depends(require_user),
     db: Session = Depends(get_session),
 ) -> HTMLResponse:
@@ -494,6 +405,7 @@ def review_question(
             options=review_service.option_list(question),
             rubric=review_service.rubric_items(question),
             categorisation=review_service.categorisation_data(question),
+            return_to=return_to,
         ),
     )
 
@@ -537,6 +449,7 @@ async def submit_review_answer(
             question=question,
             submitted_answer=submitted_answer,
             feedback=feedback,
+            return_to=str(form.get("return_to", "")),
         ),
     )
 
@@ -576,24 +489,10 @@ async def rate_review_answer(
         confidence=str(form.get("confidence", "medium")),
         score=score,
     )
-    queue = review_service.due_questions(db, limit=settings.review_session_size)
-    if queue:
-        return redirect(f"/review/{queue[0].id}")
-    return redirect("/review/summary")
-
-
-@app.get("/review/summary", response_class=HTMLResponse)
-def review_summary(
-    request: Request,
-    user: SessionUser = Depends(require_user),
-    db: Session = Depends(get_session),
-) -> HTMLResponse:
-    attempts = review_service.recent_attempts(db, limit=20)
-    weak = review_service.weak_areas(db, limit=5)
-    return templates.TemplateResponse(
-        "review_summary.html",
-        context(request, user, attempts=attempts, weak_areas=weak, due_count=review_service.due_count(db)),
-    )
+    return_to = str(form.get("return_to", "")).strip()
+    if return_to.startswith("/"):
+        return redirect(return_to)
+    return redirect(f"/sources/{question.source_note_id}")
 
 
 @app.get("/settings", response_class=HTMLResponse)

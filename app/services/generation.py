@@ -9,7 +9,8 @@ from sqlalchemy.orm import Session, joinedload
 
 from app.config import Settings
 from app.importer.markdown import parse_markdown_file
-from app.models import GenerationJob, Question, SourceNote, utcnow
+from app.models import GenerationJob, Question, Schedule, SourceNote, utcnow
+from app.services.answer_text import strip_draft_answer_prefix
 from app.services.json_tools import dumps_json, loads_json
 
 QUESTION_TYPES = {"multiple-choice", "short-answer", "rubric", "categorisation"}
@@ -124,7 +125,7 @@ def build_generation_prompt(source: SourceNote, job: GenerationJob, settings: Se
             {
                 "type": "multiple-choice | short-answer | rubric | categorisation",
                 "prompt": "question prompt",
-                "answer": "model answer or correct option id",
+                "answer": "answer content or correct option id",
                 "options": {
                     "options": [{"id": "A", "text": "...", "correct": False, "feedback": "..."}],
                     "categories": [],
@@ -140,7 +141,7 @@ def build_generation_prompt(source: SourceNote, job: GenerationJob, settings: Se
     categorisation_shape = {"options": [], "categories": ["..."], "items": [{"text": "...", "category": "..."}]}
     return "\n".join(
         [
-            "You are creating draft retrieval-practice questions for a self-hosted learning review app.",
+            "You are creating retrieval-practice questions for a self-hosted learning review app.",
             "",
             "Return JSON only. Do not include Markdown fences, prose, comments, or code blocks.",
             f"Create exactly {job.question_count} questions. Use these question types across the set: {json.dumps(question_types)}.",
@@ -155,11 +156,11 @@ def build_generation_prompt(source: SourceNote, job: GenerationJob, settings: Se
             "Quality rules:",
             "- Avoid trivial definition-only questions.",
             "- Avoid ambiguous multiple-choice options.",
-            "- Every question needs a model answer and feedback.",
+            "- Every question needs answer content and feedback.",
             "- Multiple-choice questions need 3-5 options, exactly one correct option, and feedback on every option.",
             "- Rubric questions need criteria with points.",
             "- Categorisation questions need categories and tap-select items.",
-            "- Generated questions must be drafts; do not claim they are approved.",
+            "- Do not prefix prompts, answers, or feedback with workflow/status labels.",
             "",
             "JSON shape:",
             json.dumps(json_shape, indent=2),
@@ -237,6 +238,13 @@ def _require_text(item: dict[str, Any], key: str) -> str:
     return value.strip()
 
 
+def _clean_generated_answer(answer: str) -> str:
+    cleaned = strip_draft_answer_prefix(answer)
+    if not cleaned:
+        raise ValueError("Question is missing answer")
+    return cleaned
+
+
 def _feedback(value: Any) -> dict[str, str]:
     if not isinstance(value, dict):
         raise ValueError("feedback must be an object")
@@ -260,7 +268,7 @@ def validate_generated_payload(raw_output: str) -> list[dict[str, Any]]:
         if question_type not in QUESTION_TYPES:
             raise ValueError(f"Question {index} has unsupported type {question_type}")
         prompt = _require_text(item, "prompt")
-        answer = _require_text(item, "answer")
+        answer = _clean_generated_answer(_require_text(item, "answer"))
         feedback = _feedback(item.get("feedback"))
         difficulty = item.get("difficulty", 2)
         try:
@@ -344,27 +352,38 @@ def import_generated_questions(db: Session, job: GenerationJob, raw_output: str)
         prompt
         for (prompt,) in db.execute(select(Question.prompt).where(Question.source_note_id == job.source_note_id)).all()
     }
+    now = utcnow()
     created = 0
     for item in generated:
         if item["prompt"] in existing_prompts:
             continue
+        question = Question(
+            source_note_id=job.source_note_id,
+            type=item["type"],
+            prompt=item["prompt"],
+            answer=item["answer"],
+            options_json=dumps_json(item["options"]),
+            rubric_json=dumps_json(item["rubric"]),
+            feedback_json=dumps_json(item["feedback"]),
+            source_reference=item["source_reference"] or job.source_note.path,
+            difficulty=item["difficulty"],
+            status="active",
+        )
+        db.add(question)
+        db.flush()
         db.add(
-            Question(
-                source_note_id=job.source_note_id,
-                type=item["type"],
-                prompt=item["prompt"],
-                answer=item["answer"],
-                options_json=dumps_json(item["options"]),
-                rubric_json=dumps_json(item["rubric"]),
-                feedback_json=dumps_json(item["feedback"]),
-                source_reference=item["source_reference"] or job.source_note.path,
-                difficulty=item["difficulty"],
-                status="draft",
+            Schedule(
+                question_id=question.id,
+                due_at=now,
+                interval_days=0.0,
+                stability=0.0,
+                difficulty=float(question.difficulty),
+                lapse_count=0,
             )
         )
         created += 1
-    if created and job.source_note.learning_status != "active":
-        job.source_note.learning_status = "questions-drafted"
+    if created:
+        job.source_note.learning_status = "active"
     return created
 
 

@@ -310,6 +310,11 @@ th {
   letter-spacing: 0;
 }
 
+.muted {
+  color: var(--muted);
+  font-size: 13px;
+}
+
 .pill {
   display: inline-flex;
   align-items: center;

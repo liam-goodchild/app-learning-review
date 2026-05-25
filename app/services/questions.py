@@ -19,6 +19,20 @@ def validate_json_field(text: str, default: object) -> str:
     return safe_json(loads_json(text, default))
 
 
+def attach_active_schedule(db: Session, question: Question, *, now=None) -> None:
+    now = now or utcnow()
+    db.add(
+        Schedule(
+            question_id=question.id,
+            due_at=now,
+            interval_days=0.0,
+            stability=0.0,
+            difficulty=float(question.difficulty),
+            lapse_count=0,
+        )
+    )
+
+
 def create_question(
     db: Session,
     source_note_id: int,
@@ -35,6 +49,7 @@ def create_question(
     source = db.get(SourceNote, source_note_id)
     if source is None:
         raise ValueError("Source note not found")
+    now = utcnow()
     question = Question(
         source_note_id=source_note_id,
         type=question_type,
@@ -44,11 +59,13 @@ def create_question(
         rubric_json=validate_json_field(rubric_json, []),
         feedback_json=validate_json_field(feedback_json, {}),
         source_reference=source.path,
-        status="draft",
+        status="active",
     )
     db.add(question)
-    source.learning_status = "questions-drafted"
-    source.updated_at = utcnow()
+    db.flush()
+    attach_active_schedule(db, question, now=now)
+    source.learning_status = "active"
+    source.updated_at = now
     db.commit()
     db.refresh(question)
     return question

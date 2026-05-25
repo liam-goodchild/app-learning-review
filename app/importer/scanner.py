@@ -26,6 +26,7 @@ class ScanResult:
     skipped_unmarked: int = 0
     skipped_errors: int = 0
     draft_questions_created: int = 0
+    generation_jobs_enqueued: int = 0
     errors: list[str] = field(default_factory=list)
 
 
@@ -56,7 +57,7 @@ def _status_for_source(parsed: ParsedMarkdown, existing: SourceNote | None) -> s
     if existing and existing.learning_status == "active":
         return "active"
     if incoming == "needs-questions" and existing and existing.questions:
-        return "questions-drafted"
+        return "active"
     return incoming
 
 
@@ -78,33 +79,6 @@ def _upsert_concept(db: Session, source: SourceNote, parsed: ParsedMarkdown) -> 
     )
 
 
-def _create_draft_questions(db: Session, source: SourceNote, parsed: ParsedMarkdown) -> int:
-    existing_count = db.scalar(select(func.count(Question.id)).where(Question.source_note_id == source.id))
-    if existing_count:
-        return 0
-
-    created = 0
-    for prompt in parsed.practice_questions:
-        db.add(
-            Question(
-                source_note_id=source.id,
-                type="short-answer",
-                prompt=prompt,
-                answer="",
-                feedback_json=safe_json(
-                    {
-                        "why": "Draft extracted from the Obsidian practice questions section. Add a model answer before approval.",
-                        "common_misconception": "",
-                    }
-                ),
-                source_reference=f"{source.path}#Practice questions",
-                status="draft",
-            )
-        )
-        created += 1
-    if created:
-        source.learning_status = "questions-drafted"
-    return created
 
 
 def import_markdown_file(db: Session, path: Path, settings: Settings, now: datetime | None = None) -> tuple[SourceNote | None, int]:
@@ -145,11 +119,8 @@ def import_markdown_file(db: Session, path: Path, settings: Settings, now: datet
     source.updated_at = now
 
     _upsert_concept(db, source, parsed)
-    draft_count = _create_draft_questions(db, source, parsed)
-    if draft_count:
-        source.learning_status = "questions-drafted"
     db.commit()
-    return source, draft_count if not created else -draft_count
+    return source, 0
 
 
 def scan_vault(db: Session, settings: Settings, now: datetime | None = None) -> ScanResult:
@@ -181,19 +152,38 @@ def scan_vault(db: Session, settings: Settings, now: datetime | None = None) -> 
                     continue
                 relative_path = _relative_path(path, settings.vault_path)
                 existed = db.scalar(_query_existing(parsed, relative_path)) is not None
-                source, draft_delta = import_markdown_file(db, path, settings, now=now)
+                source, _ = import_markdown_file(db, path, settings, now=now)
                 if source is None:
                     continue
                 result.imported += 1
                 if existed:
                     result.updated += 1
-                    result.draft_questions_created += draft_delta
                 else:
                     result.created += 1
-                    result.draft_questions_created += abs(draft_delta)
             except Exception as exc:  # pragma: no cover - defensive logging path
                 db.rollback()
                 result.skipped_errors += 1
                 result.errors.append(f"{path}: {exc}")
+
+    from app.models import GenerationJob
+    from app.services import generation as generation_service
+
+    needs = db.scalars(
+        select(SourceNote).where(SourceNote.learning_status == "needs-questions")
+    ).all()
+    for source in needs:
+        has_questions = db.scalar(select(func.count(Question.id)).where(Question.source_note_id == source.id))
+        if has_questions:
+            continue
+        has_pending = db.scalar(
+            select(func.count(GenerationJob.id)).where(
+                GenerationJob.source_note_id == source.id,
+                GenerationJob.status.in_(("pending", "running")),
+            )
+        )
+        if has_pending:
+            continue
+        generation_service.enqueue_generation_job(db, source)
+        result.generation_jobs_enqueued += 1
     return result
 

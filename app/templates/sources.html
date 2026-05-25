@@ -1,10 +1,10 @@
 {% extends "base.html" %}
-{% block title %}Sources - Learning Review{% endblock %}
+{% block title %}Notes - Learning Review{% endblock %}
 {% block content %}
 <section class="page-heading">
   <div>
-    <h1>Sources</h1>
-    {% if scan_message %}<p>{{ scan_message }}</p>{% else %}<p>{{ notes|length }} imported notes</p>{% endif %}
+    <h1>Notes</h1>
+    {% if scan_message %}<p>{{ scan_message }}</p>{% else %}<p>{{ notes|length }} notes</p>{% endif %}
   </div>
   <form method="post" action="/sources/scan">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
@@ -14,10 +14,11 @@
 
 <form class="toolbar" method="get" action="/sources">
   <label>
-    Status
-    <select name="learning_status" onchange="this.form.submit()">
-      {% for status in ["all", "needs-questions", "questions-drafted", "active", "stale"] %}
-      <option value="{{ status }}" {% if selected_status == status %}selected{% endif %}>{{ status }}</option>
+    Tag
+    <select name="tag" onchange="this.form.submit()">
+      <option value="" {% if not selected_tag %}selected{% endif %}>All</option>
+      {% for t in all_tags %}
+      <option value="{{ t }}" {% if selected_tag == t %}selected{% endif %}>{{ t }}</option>
       {% endfor %}
     </select>
   </label>
@@ -30,28 +31,21 @@
       <thead>
         <tr>
           <th>Title</th>
-          <th>Status</th>
           <th>Path</th>
-          <th>Tags</th>
-          <th>Imported</th>
         </tr>
       </thead>
       <tbody>
         {% for note in notes %}
         <tr>
           <td><a href="/sources/{{ note.id }}">{{ note.title }}</a></td>
-          <td><span class="pill">{{ note.learning_status }}</span></td>
           <td class="path">{{ note.path }}</td>
-          <td class="path">{{ note.tags_json }}</td>
-          <td>{{ note.last_imported_at|datetime }}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% else %}
-  <p class="empty">No sources match this filter.</p>
+  <p class="empty">No notes match this filter.</p>
   {% endif %}
 </section>
 {% endblock %}
-

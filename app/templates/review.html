@@ -3,20 +3,16 @@
 {% block content %}
 <section class="page-heading">
   <div>
-    <h1>Daily Review</h1>
-    <p><a href="/sources/{{ question.source_note.id }}">{{ question.source_note.title }}</a></p>
+    <h1><a href="/sources/{{ question.source_note.id }}">{{ question.source_note.title }}</a></h1>
   </div>
 </section>
 
 <section class="review-surface">
-  <div class="review-meta">
-    <span class="pill">{{ question.type }}</span>
-    <span>{{ question.source_reference or question.source_note.path }}</span>
-  </div>
   <h2>{{ question.prompt }}</h2>
 
   <form class="stack" method="post" action="/review/{{ question.id }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="return_to" value="{{ return_to or '' }}">
     {% if question.type == "multiple-choice" %}
       <fieldset class="choice-list">
         {% for option in options %}

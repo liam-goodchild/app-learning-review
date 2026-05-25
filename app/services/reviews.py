@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, joinedload
 from app.models import Attempt, Question, Schedule, SourceNote, utcnow
 from app.scheduling.base import ScheduleState
 from app.scheduling.simple import SimpleScheduler
+from app.services.answer_text import strip_draft_answer_prefix
 from app.services.json_tools import loads_json
 
 VALID_RATINGS = {"again", "hard", "good", "easy"}
@@ -95,10 +96,11 @@ def due_count(db: Session, now: datetime | None = None) -> int:
 
 def evaluate_answer(question: Question, submitted_answer: str) -> dict[str, Any]:
     feedback = feedback_dict(question)
+    expected_answer = strip_draft_answer_prefix(question.answer)
     result: dict[str, Any] = {
         "result": "self-scored",
         "score": None,
-        "expected_answer": question.answer,
+        "expected_answer": expected_answer,
         "why": feedback.get("why", ""),
         "common_misconception": feedback.get("common_misconception", ""),
         "source_reference": question.source_reference or question.source_note.path,
@@ -113,7 +115,7 @@ def evaluate_answer(question: Question, submitted_answer: str) -> dict[str, Any]
         score = 1.0 if selected in correct_ids else 0.0
         result["score"] = score
         result["result"] = "correct" if score == 1.0 else "incorrect"
-        result["expected_answer"] = question.answer or ", ".join(sorted(correct_ids))
+        result["expected_answer"] = expected_answer or ", ".join(sorted(correct_ids))
         result["option_feedback"] = options
         return result
 
@@ -227,4 +229,3 @@ def weak_areas(db: Session, limit: int = 5) -> list[tuple[SourceNote, int]]:
         .limit(limit)
     ).all()
     return [(row[0], int(row[1])) for row in rows]
-
