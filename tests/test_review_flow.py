@@ -7,7 +7,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.models import Attempt, Base, Question, Schedule, SourceNote
 from app.services.questions import approve_question
-from app.services.reviews import due_questions, record_attempt_and_schedule
+from app.services.reviews import due_questions, evaluate_answer, record_attempt_and_schedule
 
 
 def make_session(tmp_path):
@@ -65,6 +65,17 @@ def test_review_attempt_recording_updates_schedule(tmp_path):
     assert db.scalar(select(Attempt)) is not None
     assert schedule.last_reviewed_at is not None
     assert schedule.interval_days >= 1.0
+
+
+def test_review_feedback_removes_stored_draft_answer_prefix(tmp_path):
+    db = make_session(tmp_path)
+    question = seed_question(db)
+    question.answer = "Draft answer: Answer"
+    db.commit()
+
+    feedback = evaluate_answer(question, "Answer")
+
+    assert feedback["expected_answer"] == "Answer"
 
 
 def test_due_queue_interleaves_sources(tmp_path):

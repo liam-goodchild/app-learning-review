@@ -82,11 +82,11 @@ def test_scan_imports_marked_notes_idempotently(tmp_path):
 
     assert first.imported == 1
     assert first.created == 1
-    assert first.draft_questions_created == 2
+    assert first.generation_jobs_enqueued == 1
     assert second.imported == 1
     assert second.created == 0
     assert db.scalar(select(SourceNote).where(SourceNote.title == "Terraform Variables and Outputs")) is not None
-    assert len(db.scalars(select(Question)).all()) == 2
+    assert len(db.scalars(select(Question)).all()) == 0
 
 
 def test_scan_updates_content_hash_without_duplicate(tmp_path):

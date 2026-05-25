@@ -76,6 +76,7 @@ def test_generation_prompt_contains_source_body_and_schema(tmp_path):
     assert "Return JSON only" in prompt
     assert "Variables are inputs" in prompt
     assert "multiple-choice" in prompt
+    assert "draft" not in prompt.lower()
 
 
 def test_validate_and_import_generated_questions(tmp_path):
@@ -89,8 +90,29 @@ def test_validate_and_import_generated_questions(tmp_path):
     assert len(questions) == 4
     assert completed.status == "succeeded"
     assert completed.draft_questions_created == 4
-    assert db.get(SourceNote, source.id).learning_status == "questions-drafted"
+    assert db.get(SourceNote, source.id).learning_status == "active"
     assert len(db.scalars(select(Question).where(Question.source_note_id == source.id)).all()) == 4
+
+
+def test_generated_answer_draft_prefix_is_removed(tmp_path):
+    output = {
+        "questions": [
+            {
+                "type": "short-answer",
+                "prompt": "What belongs at a Terraform module boundary?",
+                "answer": "Draft answer: Input variables belong at the module boundary.",
+                "options": [],
+                "rubric": [],
+                "feedback": {"why": "Inputs are supplied by callers.", "common_misconception": ""},
+                "difficulty": 2,
+                "source_reference": "test.md",
+            }
+        ]
+    }
+
+    questions = validate_generated_payload(json.dumps(output))
+
+    assert questions[0]["answer"] == "Input variables belong at the module boundary."
 
 
 def test_claim_next_job_builds_prompt(tmp_path):
